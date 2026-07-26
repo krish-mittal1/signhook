@@ -21,7 +21,12 @@ if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
 from providers import github, stripe, twilio  # noqa: E402
-from utils.signing import canonical_json, hmac_sha256_hex  # noqa: E402
+from utils.signing import canonical_json  # noqa: E402
+from utils.verify import (  # noqa: E402
+    verify_github,
+    verify_stripe,
+    verify_twilio,
+)
 
 STRIPE_TEST_SECRET = "whsec_test_webhook_sandbox_stripe"
 TWILIO_TEST_SECRET = "twilio_auth_token_test_sandbox"
@@ -29,43 +34,13 @@ TWILIO_TEST_URL = "https://example.com/webhooks/twilio"
 GITHUB_TEST_SECRET = "github_webhook_secret_test_sandbox"
 
 
-def parse_stripe_signature_header(header: str) -> tuple[str, str]:
-    """Parse ``t=...,v1=...`` into ``(timestamp, v1_hex)``.
-
-    Stripe may send multiple ``v1`` schemes; we take the first of each.
-    """
-    timestamp: str | None = None
-    v1: str | None = None
-    for part in header.split(","):
-        key, _, value = part.strip().partition("=")
-        if key == "t" and timestamp is None:
-            timestamp = value
-        elif key == "v1" and v1 is None:
-            v1 = value
-    if timestamp is None or v1 is None:
-        raise ValueError(f"Malformed Stripe-Signature header: {header!r}")
-    return timestamp, v1
-
-
 def verify_stripe_signature(
     payload: dict[str, Any],
     secret: str,
     headers: dict[str, str],
 ) -> bool:
-    """Re-derive Stripe's v1 HMAC and compare to ``headers['Stripe-Signature']``.
-
-    This deliberately does **not** call ``stripe.sign_payload``. It rebuilds the
-    signed payload string from the header timestamp + canonical JSON of
-    ``payload``, then HMAC-compares — the same contract a receiver implements.
-    """
-    header = headers.get("Stripe-Signature")
-    if not header:
-        return False
-
-    timestamp, expected_v1 = parse_stripe_signature_header(header)
-    body = canonical_json(payload)
-    actual_v1 = hmac_sha256_hex(secret, f"{timestamp}.{body}")
-    return hmac.compare_digest(actual_v1, expected_v1)
+    raw = canonical_json(payload).encode("utf-8")
+    return verify_stripe(raw, headers, secret).ok
 
 
 def verify_twilio_signature(
@@ -74,24 +49,7 @@ def verify_twilio_signature(
     target_url: str,
     headers: dict[str, str],
 ) -> bool:
-    """Re-derive Twilio's signature via ``compute_twilio_signature``.
-
-    Uses the same concatenation rules as Twilio's RequestValidator, not
-    ``sign_payload``, so we are not checking the signer against itself.
-    """
-    header = headers.get("X-Twilio-Signature")
-    if not header:
-        return False
-    actual = twilio.compute_twilio_signature(target_url, payload, secret)
-    return hmac.compare_digest(actual, header)
-
-
-def parse_github_signature_header(header: str) -> str:
-    """Parse ``sha256=<hex>`` and return the hex digest."""
-    algo, _, digest = header.partition("=")
-    if algo != "sha256" or not digest:
-        raise ValueError(f"Malformed X-Hub-Signature-256 header: {header!r}")
-    return digest
+    return verify_twilio(target_url, payload, headers, secret).ok
 
 
 def verify_github_signature(
@@ -99,16 +57,8 @@ def verify_github_signature(
     secret: str,
     headers: dict[str, str],
 ) -> bool:
-    """Re-derive GitHub's HMAC-SHA256 over canonical JSON of ``payload``.
-
-    Does **not** call ``github.sign_payload`` — same independence as Stripe.
-    """
-    header = headers.get("X-Hub-Signature-256")
-    if not header:
-        return False
-    expected = parse_github_signature_header(header)
-    actual = hmac_sha256_hex(secret, canonical_json(payload))
-    return hmac.compare_digest(actual, expected)
+    raw = canonical_json(payload).encode("utf-8")
+    return verify_github(raw, headers, secret).ok
 
 
 def _assert(condition: bool, message: str) -> None:
@@ -208,7 +158,6 @@ def run_twilio_checks() -> None:
         _assert(not bad_url, f"wrong URL incorrectly verified for {event_type}")
 
         tampered = dict(payload)
-        # Prefer a field every event type has.
         tampered["From"] = "+19999999999"
         bad_params = verify_twilio_signature(
             tampered, TWILIO_TEST_SECRET, TWILIO_TEST_URL, headers
@@ -217,12 +166,15 @@ def run_twilio_checks() -> None:
 
         print(f"  ok  {event_type}")
 
-    # Cross-check against Twilio's documented example algorithm with a fixed fixture.
-    # url + sorted(key+value) → Base64(HMAC-SHA1)
     fixed_url = "https://mycompany.com/myapp.php?foo=1&bar=2"
-    fixed_params = {"CallSid": "CA1234567890ABCDE", "Caller": "+14158675309", "Digits": "1234", "From": "+14155551212", "To": "+18005551212"}
+    fixed_params = {
+        "CallSid": "CA1234567890ABCDE",
+        "Caller": "+14158675309",
+        "Digits": "1234",
+        "From": "+14155551212",
+        "To": "+18005551212",
+    }
     fixed_token = "12345"
-    # Hand-computed via the same RequestValidator rules (also matches Twilio docs examples).
     expected = twilio.compute_twilio_signature(fixed_url, fixed_params, fixed_token)
     roundtrip = twilio.sign_payload(
         fixed_params, fixed_token, target_url=fixed_url
