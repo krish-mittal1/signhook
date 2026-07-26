@@ -47,3 +47,38 @@ class ProviderInfo(BaseModel):
 
 class ProvidersResponse(BaseModel):
     providers: list[ProviderInfo]
+
+
+class InboxArmRequest(BaseModel):
+    provider: Provider
+    secret: str
+
+
+class InboxArmResponse(BaseModel):
+    ok: bool = True
+    provider: Provider
+    listen_url: str
+
+
+class InboxLatestResponse(BaseModel):
+    provider: Provider
+    delivery: Optional[dict[str, Any]] = None
+
+
+class InboxProbeRequest(BaseModel):
+    provider: Provider
+    secret: str
+    event_type: str
+
+
+class InboxProbeCase(BaseModel):
+    id: str
+    expected: bool
+    actual: Optional[bool] = None
+    passed: bool
+    detail: Optional[str] = None
+
+
+class InboxProbeResponse(BaseModel):
+    provider: Provider
+    cases: list[InboxProbeCase]
