@@ -4,27 +4,19 @@ services:
       context: ./backend
     ports:
       - "8000:8000"
-
-  # Signature-check target for local Docker demos.
-  # Reachable from the backend container as http://echo:9999/...
-  echo:
-    build:
-      context: ./backend
-    command: ["python", "-u", "tests/echo_receiver.py"]
-    ports:
-      - "9999:9999"
+    environment:
+      - SIGNHOOK_BASE_URL=http://127.0.0.1:8000
 
   frontend:
     build:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_URL: http://localhost:8000
-        # Backend must call the echo *service name*, not localhost.
-        NEXT_PUBLIC_DEFAULT_TARGET_BASE: http://echo:9999
+        # Backend POSTs to its own /hooks inbox (same container).
+        NEXT_PUBLIC_DEFAULT_TARGET_BASE: http://127.0.0.1:8000
     ports:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - backend
-      - echo

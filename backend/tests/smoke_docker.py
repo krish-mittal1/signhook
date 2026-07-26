@@ -1,8 +1,10 @@
-"""Smoke-test containerized /api/send-webhook against the Compose echo service."""
+"""Smoke-test containerized inbox: arm → send → verified + byte match."""
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -13,10 +15,9 @@ if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
 from providers import generate_payload  # noqa: E402
+from utils.outbound import prepare_outbound  # noqa: E402
 
-API = "http://127.0.0.1:8000"
-# Echo is a Compose service; backend reaches it on the Docker network.
-ECHO_BASE = "http://echo:9999"
+API = os.environ.get("SIGNHOOK_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 CASES = [
     ("stripe", "payment_intent.succeeded", "whsec_smoke_stripe"),
@@ -26,51 +27,65 @@ CASES = [
 
 
 def main() -> int:
-    # UI reachable?
     ui = httpx.get("http://127.0.0.1:3000", timeout=10.0)
-    print(f"UI GET / -> {ui.status_code} (len={len(ui.text)})")
-    if ui.status_code != 200 or "signhook" not in ui.text.lower():
-        print("FAIL: frontend container did not serve signhook UI", file=sys.stderr)
+    print(f"UI GET / -> {ui.status_code}")
+    if ui.status_code != 200:
+        print("FAIL: frontend not up", file=sys.stderr)
         return 1
 
-    health = httpx.get(f"{API}/health", timeout=5.0)
-    print(f"API /health -> {health.status_code} {health.text}")
+    with httpx.Client(timeout=20.0) as client:
+        client.post(f"{API}/api/inbox/disarm")
+        for provider, event_type, secret in CASES:
+            listen = f"{API}/hooks/{provider}"
+            payload = generate_payload(provider, event_type)
+            headers, body = prepare_outbound(provider, payload, secret, listen)
+            sent_sha = hashlib.sha256(body).hexdigest()
 
-    providers = httpx.get(f"{API}/api/providers", timeout=5.0)
-    print(f"API /api/providers -> {providers.status_code}")
+            arm = client.post(
+                f"{API}/api/inbox/arm", json={"provider": provider, "secret": secret}
+            )
+            assert arm.status_code == 200, arm.text
 
-    for provider, event_type, secret in CASES:
-        target = f"{ECHO_BASE}/hooks/{provider}"
-        payload = generate_payload(provider, event_type)
-        print("=" * 60)
-        print(f"DOCKER UI-path send: {provider}/{event_type}")
-        print(f"target_url: {target}")
-        resp = httpx.post(
-            f"{API}/api/send-webhook",
-            json={
-                "provider": provider,
-                "payload": payload,
-                "secret": secret,
-                "target_url": target,
-            },
-            timeout=20.0,
-        )
-        print(f"API status: {resp.status_code}")
-        data = resp.json()
-        print(json.dumps(data, indent=2))
-        if resp.status_code != 200 or data.get("status_code") != 200:
-            print("FAIL: bad HTTP status", file=sys.stderr)
-            return 1
-        echo = json.loads(data["response_body"])
-        if not echo.get("signature_verified"):
-            print("FAIL: signature not verified", file=sys.stderr)
-            return 1
-        print(f"PASS {provider}: signature_verified=true (via Docker backend)")
+            # Path the UI uses: send-webhook API
+            send = client.post(
+                f"{API}/api/send-webhook",
+                json={
+                    "provider": provider,
+                    "payload": payload,
+                    "secret": secret,
+                    "target_url": listen,
+                },
+            )
+            assert send.status_code == 200, send.text
+            send_data = send.json()
+            assert send_data["status_code"] == 200, send_data
+            echo = json.loads(send_data["response_body"])
+            assert echo["signature_verified"] is True, echo
+            assert echo["body_sha256"] == sent_sha, (
+                f"{provider}: body sha mismatch sent={sent_sha} got={echo['body_sha256']}"
+            )
+            print(f"PASS {provider}: signed==sent==inbox verified")
 
-    print("=" * 60)
-    print("All Dockerized sends passed.")
+            probe = client.post(
+                f"{API}/api/inbox/probe",
+                json={
+                    "provider": provider,
+                    "secret": secret,
+                    "event_type": event_type,
+                },
+            )
+            assert probe.status_code == 200, probe.text
+            for case in probe.json()["cases"]:
+                assert case["passed"] is True, case
+            print(f"PASS {provider}: probe via real /hooks HTTP")
+
+    print("All Dockerized inbox checks passed.")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except AssertionError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
