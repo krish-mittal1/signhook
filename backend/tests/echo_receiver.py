@@ -135,5 +135,5 @@ def _verify_twilio(url: str, params: dict, header: str, secret: str) -> tuple[bo
 
 
 if __name__ == "__main__":
-    print("Echo receiver on http://127.0.0.1:9999")
-    uvicorn.run(app, host="127.0.0.1", port=9999, log_level="warning")
+    print("Echo receiver on http://0.0.0.0:9999")
+    uvicorn.run(app, host="0.0.0.0", port=9999, log_level="warning")
