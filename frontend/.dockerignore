@@ -1,0 +1,15 @@
+Dockerfile
+.dockerignore
+node_modules
+npm-debug.log*
+.next
+out
+dist
+.git
+.gitignore
+.env*.local
+README.md
+.DS_Store
+*.pem
+coverage
+.turbo
