@@ -2,7 +2,11 @@
 
 **Stop hand-crafting curl commands and reverse-engineering signature schemes to test webhooks.**
 
+If you've ever debugged a failing Stripe/Twilio/GitHub integration by squinting at signature headers, this is for you.
+
 Generate realistic Stripe, Twilio, and GitHub webhook payloads, sign them the way those providers actually do, and send them to your local server — with a clear diagnosis when verification fails.
+
+**Status:** MVP. Core flows work for three providers; PRs for new providers are welcome.
 
 > **Demo GIF** — *placeholder: record a 20–30s walkthrough (pick provider → Sign & Send → green 200) and drop it here before launch.*
 
@@ -43,15 +47,17 @@ That’s it. No accounts, no hosted SaaS, no extra config.
 
 signhook is **local-only**. You paste webhook secrets / auth tokens into the UI; they are used only by the process running on your computer. Nothing is uploaded to a third-party service. That is intentional — and the main reason this is not a hosted product.
 
+**Why local, not hosted:** no account, no hosted service ever touches your secrets, and the whole tool runs entirely on your machine.
+
 ---
 
 ## Supported providers
 
-| Provider | Events | Signature |
-|----------|--------|-----------|
-| **Stripe** | `payment_intent.succeeded`, `customer.created`, `invoice.paid` | `Stripe-Signature` (`t=…,v1=…` HMAC-SHA256) |
-| **Twilio** | `message.received`, `call.completed` | `X-Twilio-Signature` (HMAC-SHA1 over URL + sorted params) |
-| **GitHub** | `push`, `pull_request`, `issues` | `X-Hub-Signature-256` (`sha256=` HMAC-SHA256) |
+| Provider | Events | Signature Header |
+|----------|--------|------------------|
+| **Stripe** | `payment_intent.succeeded`, `customer.created`, `invoice.paid` | `Stripe-Signature` |
+| **Twilio** | `message.received`, `call.completed` | `X-Twilio-Signature` |
+| **GitHub** | `push`, `pull_request`, `issues` | `X-Hub-Signature-256` |
 
 ---
 

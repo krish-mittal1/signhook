@@ -51,13 +51,15 @@ If the outbound body is not JSON, teach [`utils/outbound.py`](backend/utils/outb
 
 Add a short failure hint in [`utils/diagnosis.py`](backend/utils/diagnosis.py) for the #1 mistake people make with that provider.
 
-### 3. Extend the verify harness
+### 3. Extend the verify harness (required)
 
 In [`backend/tests/verify_signatures.py`](backend/tests/verify_signatures.py):
 
 - Independent verify function (do **not** just call `sign_payload` to check itself).  
 - Assert: correct signature matches, wrong secret fails, tampered payload fails.  
 - If URL-bound: wrong URL fails.
+
+**This is the correctness gate, not optional.** A PR that adds a provider will not be considered until `tests/verify_signatures.py` passes for that provider (and still passes for the existing ones).
 
 Run:
 
@@ -68,6 +70,7 @@ python tests/verify_signatures.py
 
 ### 4. Open a PR
 
+- Confirm `python tests/verify_signatures.py` exits `0` locally before opening the PR.  
 - Keep the diff scoped to one provider when possible.  
 - Mention the official docs URL for the signature scheme in the PR description.  
 - No need for a frontend change — the UI loads providers from `GET /api/providers`.
