@@ -1,6 +1,6 @@
-"""Smoke-test /api/send-webhook against the local echo receiver.
+"""Smoke-test /api/send-webhook against the optional echo receiver.
 
-Prereq: echo on :9999 and API on :8000.
+Prefer `smoke_inbox.py` (built-in inbox). This still works with echo on :9999:
 
     python tests/echo_receiver.py
     uvicorn main:app --port 8000
