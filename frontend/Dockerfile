@@ -14,8 +14,8 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
-# Default target base when the API runs in Docker and echo runs on the host.
-ARG NEXT_PUBLIC_DEFAULT_TARGET_BASE=http://host.docker.internal:9999
+# Built-in inbox on the API (backend POSTs to itself).
+ARG NEXT_PUBLIC_DEFAULT_TARGET_BASE=http://127.0.0.1:8000
 ENV NEXT_PUBLIC_DEFAULT_TARGET_BASE=$NEXT_PUBLIC_DEFAULT_TARGET_BASE
 
 RUN npm run build

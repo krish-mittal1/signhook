@@ -13,7 +13,28 @@ export type SendResult = {
   diagnosis: string | null;
 };
 
-const API_URL =
+export type InboxDelivery = {
+  provider: string;
+  verified: boolean;
+  detail: string;
+  body_bytes: number;
+  body_sha256: string;
+  body_preview: string;
+  headers: Record<string, string>;
+  request_url: string;
+  signed_over: string | null;
+  received_at: number;
+};
+
+export type ProbeCase = {
+  id: string;
+  expected: boolean;
+  actual: boolean | null;
+  passed: boolean;
+  detail: string | null;
+};
+
+export const API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ||
   "http://localhost:8000";
 
@@ -59,4 +80,35 @@ export function sendWebhook(body: {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+export function armInbox(provider: ProviderId, secret: string) {
+  return request<{ ok: boolean; provider: ProviderId; listen_url: string }>(
+    "/api/inbox/arm",
+    {
+      method: "POST",
+      body: JSON.stringify({ provider, secret }),
+    },
+  );
+}
+
+export function fetchInboxLatest(provider: ProviderId) {
+  return request<{ provider: ProviderId; delivery: InboxDelivery | null }>(
+    `/api/inbox/latest?provider=${encodeURIComponent(provider)}`,
+  );
+}
+
+export function runInboxProbe(body: {
+  provider: ProviderId;
+  secret: string;
+  event_type: string;
+}) {
+  return request<{ provider: ProviderId; cases: ProbeCase[] }>("/api/inbox/probe", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function inboxListenUrl(provider: ProviderId) {
+  return `${API_URL}/hooks/${provider}`;
 }

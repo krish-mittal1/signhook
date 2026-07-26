@@ -2,13 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EventTypeSelect } from "@/components/EventTypeSelect";
+import { InboxPanel } from "@/components/InboxPanel";
 import { PayloadEditor } from "@/components/PayloadEditor";
 import { ProviderSelect } from "@/components/ProviderSelect";
 import { ResultPanel } from "@/components/ResultPanel";
 import {
+  API_URL,
+  armInbox,
+  fetchInboxLatest,
   fetchProviders,
   generatePayload,
+  inboxListenUrl,
+  runInboxProbe,
   sendWebhook,
+  type InboxDelivery,
+  type ProbeCase,
   type ProviderId,
   type ProviderInfo,
   type SendResult,
@@ -19,16 +27,13 @@ function pretty(payload: unknown) {
 }
 
 const DEFAULT_TARGET_BASE =
-  process.env.NEXT_PUBLIC_DEFAULT_TARGET_BASE?.replace(/\/$/, "") ||
-  "http://127.0.0.1:9999";
+  process.env.NEXT_PUBLIC_DEFAULT_TARGET_BASE?.replace(/\/$/, "") || API_URL;
 
 export default function HomePage() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [provider, setProvider] = useState<ProviderId | "">("");
   const [eventType, setEventType] = useState("");
-  const [targetUrl, setTargetUrl] = useState(
-    `${DEFAULT_TARGET_BASE}/hooks/stripe`,
-  );
+  const [targetUrl, setTargetUrl] = useState(`${DEFAULT_TARGET_BASE}/hooks/stripe`);
   const [secret, setSecret] = useState("");
   const [payloadText, setPayloadText] = useState("");
   const [result, setResult] = useState<SendResult | null>(null);
@@ -36,6 +41,10 @@ export default function HomePage() {
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [armed, setArmed] = useState(false);
+  const [delivery, setDelivery] = useState<InboxDelivery | null>(null);
+  const [probeCases, setProbeCases] = useState<ProbeCase[] | null>(null);
+  const [probing, setProbing] = useState(false);
 
   const selected = useMemo(
     () => providers.find((p) => p.id === provider) ?? null,
@@ -56,6 +65,7 @@ export default function HomePage() {
           const first = data.providers[0];
           setProvider(first.id);
           setEventType(first.event_types[0] ?? "");
+          setTargetUrl(inboxListenUrl(first.id));
         }
       } catch (err) {
         if (!cancelled) {
@@ -93,18 +103,77 @@ export default function HomePage() {
     void refreshPayload(provider, eventType);
   }, [provider, eventType, refreshPayload]);
 
+  // Poll inbox latest while a provider is selected
+  useEffect(() => {
+    if (!provider) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const data = await fetchInboxLatest(provider);
+        if (!cancelled) setDelivery(data.delivery);
+      } catch {
+        /* ignore poll errors */
+      }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [provider]);
+
   function onProviderChange(id: string) {
     const next = providers.find((p) => p.id === id);
     setProvider(id as ProviderId);
     setEventType(next?.event_types[0] ?? "");
     setResult(null);
-    // Sensible default path for local echo receiver
-    setTargetUrl(`${DEFAULT_TARGET_BASE}/hooks/${id}`);
+    setProbeCases(null);
+    setArmed(false);
+    setTargetUrl(inboxListenUrl(id as ProviderId));
   }
 
   function onEventTypeChange(et: string) {
     setEventType(et);
     setResult(null);
+  }
+
+  async function onUseInbox() {
+    if (!provider) return;
+    setError(null);
+    try {
+      if (!secret.trim()) {
+        throw new Error("Enter a secret before arming the inbox.");
+      }
+      const data = await armInbox(provider, secret.trim());
+      setTargetUrl(data.listen_url);
+      setArmed(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to arm inbox");
+    }
+  }
+
+  async function onRunChecks() {
+    if (!provider || !eventType) return;
+    setProbing(true);
+    setError(null);
+    try {
+      if (!secret.trim()) {
+        throw new Error("Enter a secret before running signature checks.");
+      }
+      const data = await runInboxProbe({
+        provider,
+        secret: secret.trim(),
+        event_type: eventType,
+      });
+      setArmed(true);
+      setProbeCases(data.cases);
+      setTargetUrl(inboxListenUrl(provider));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Probe failed");
+    } finally {
+      setProbing(false);
+    }
   }
 
   async function onSignAndSend() {
@@ -124,6 +193,11 @@ export default function HomePage() {
       }
       if (!secret.trim()) {
         throw new Error("secret is required");
+      }
+      // Auto-arm when targeting the built-in inbox so /hooks does not 400.
+      if (targetUrl.trim().includes(`/hooks/${provider}`)) {
+        await armInbox(provider, secret.trim());
+        setArmed(true);
       }
       const data = await sendWebhook({
         provider,
@@ -156,6 +230,18 @@ export default function HomePage() {
           {error}
         </div>
       )}
+
+      <div className="mb-8">
+        <InboxPanel
+          delivery={delivery}
+          probeCases={probeCases}
+          armed={armed}
+          probing={probing}
+          onUseInbox={() => void onUseInbox()}
+          onRunChecks={() => void onRunChecks()}
+          disabled={!provider || loadingProviders}
+        />
+      </div>
 
       <div className="grid gap-8 lg:grid-cols-2">
         <section className="space-y-4">
@@ -228,7 +314,7 @@ export default function HomePage() {
         </section>
 
         <section>
-          <h2 className="mb-3 text-sm font-medium text-zinc-700">Result</h2>
+          <h2 className="mb-3 text-sm font-medium text-zinc-700">Send result</h2>
           <ResultPanel result={result} />
         </section>
       </div>
