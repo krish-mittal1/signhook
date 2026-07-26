@@ -8,7 +8,7 @@ Generate realistic Stripe, Twilio, and GitHub webhook payloads, sign them the wa
 
 **Status:** MVP. Core flows work for three providers; PRs for new providers are welcome.
 
-> **Demo GIF** — *placeholder: record a 20–30s walkthrough (pick provider → Sign & Send → green 200) and drop it here before launch.*
+![signhook demo](docs/demo.gif)
 
 ---
 

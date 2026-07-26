@@ -17,6 +17,9 @@ htmlcov/
 .env.*.local
 *.pem
 
+# Demo capture scratch
+docs/_demo_frames/
+
 # Node / Next.js (frontend later)
 node_modules/
 .next/
