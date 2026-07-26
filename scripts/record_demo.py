@@ -1,16 +1,13 @@
-"""Capture a silent demo GIF of the signhook UI (Stripe then Twilio Sign & Send).
+"""Capture a silent demo GIF: Use inbox → Sign & Send → PASS → Run checks.
 
-Prereq:
-  docker compose up
-  pip install playwright pillow imageio
-  playwright install chromium
+Prereq: API + UI running (defaults localhost:3000 / API from NEXT_PUBLIC).
 
-Usage:
-  python scripts/record_demo.py
+  backend\\.venv\\Scripts\\python scripts\\record_demo.py
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -21,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = ROOT / "docs"
 FRAMES_DIR = OUT_DIR / "_demo_frames"
 OUT_GIF = OUT_DIR / "demo.gif"
-UI = "http://localhost:3000"
+UI = os.environ.get("DEMO_UI_URL", "http://localhost:3000").rstrip("/")
 
 
 def shot(page, name: str) -> Path:
@@ -40,10 +37,10 @@ def hold(page, prefix: str, ms: int, step: int = 400) -> list[Path]:
 
 
 def assemble_gif(frame_paths: list[Path], dest: Path, duration_ms: int = 350) -> None:
-    images = []
-    for path in frame_paths:
-        img = Image.open(path).convert("P", palette=Image.ADAPTIVE, colors=128)
-        images.append(img)
+    images = [
+        Image.open(path).convert("P", palette=Image.ADAPTIVE, colors=128)
+        for path in frame_paths
+    ]
     images[0].save(
         dest,
         save_all=True,
@@ -78,36 +75,27 @@ def main() -> int:
             timeout=30_000,
         )
 
-        frames += hold(page, "01_home", 1600)
-
-        provider = page.locator("select").nth(0)
-        provider.select_option(label="Stripe")
-        page.wait_for_timeout(900)
-        frames += hold(page, "02_stripe", 1000)
+        frames += hold(page, "01_home", 1200)
 
         page.locator('input[type="password"]').fill("whsec_smoke_stripe")
-        frames += hold(page, "03_secret", 900)
+        page.get_by_role("button", name="Use inbox").click()
+        page.wait_for_timeout(600)
+        frames += hold(page, "02_armed", 1000)
 
         page.get_by_role("button", name="Sign & Send").click()
-        page.wait_for_selector("text=Status 200", timeout=30_000)
-        page.wait_for_selector("text=signature_verified")
-        frames += hold(page, "04_stripe_ok", 2600)
+        page.wait_for_selector("text=PASS", timeout=30_000)
+        frames += hold(page, "03_pass", 2400)
 
-        provider.select_option(label="Twilio")
-        page.wait_for_timeout(1000)
-        page.locator('input[type="password"]').fill("auth_smoke_twilio")
-        frames += hold(page, "05_twilio", 800)
-
-        page.get_by_role("button", name="Sign & Send").click()
-        page.wait_for_selector("text=Status 200", timeout=30_000)
-        frames += hold(page, "06_twilio_ok", 2200)
+        page.get_by_role("button", name="Run signature checks").click()
+        page.wait_for_selector("text=Signature checks", timeout=60_000)
+        page.wait_for_timeout(800)
+        frames += hold(page, "04_checks", 2600)
 
         browser.close()
 
     print(f"Assembling {len(frames)} frames -> {OUT_GIF}")
     assemble_gif(frames, OUT_GIF)
-    kb = OUT_GIF.stat().st_size // 1024
-    print(f"Wrote {OUT_GIF} ({kb} KB)")
+    print(f"Wrote {OUT_GIF} ({OUT_GIF.stat().st_size // 1024} KB)")
     return 0
 
 

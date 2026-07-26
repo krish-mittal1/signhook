@@ -24,13 +24,13 @@ Open **http://localhost:3000**
 
 That’s it. No accounts, no hosted SaaS, no extra config.
 
-| Service  | URL                     |
-|----------|-------------------------|
-| UI       | http://localhost:3000   |
-| API      | http://localhost:8000   |
-| Echo*    | http://echo:9999        |
+| Service  | URL                   |
+|----------|-----------------------|
+| UI       | http://localhost:3000 |
+| API      | http://localhost:8000 |
+| Inbox    | `http://127.0.0.1:8000/hooks/{provider}` |
 
-\*The Compose stack includes a small `echo` receiver so Sign & Send works out of the box. The UI defaults to `http://echo:9999/hooks/<provider>`. Point `target_url` at your own app (or ngrok URL) whenever you’re ready.
+Click **Use inbox**, paste a secret, then **Sign & Send** — the built-in inbox verifies the signature live (PASS/FAIL). Point `target_url` at your own app (or ngrok) whenever you’re ready. Use **Run signature checks** to fire good + deliberately bad deliveries through the real HTTP path.
 
 ---
 
@@ -38,8 +38,9 @@ That’s it. No accounts, no hosted SaaS, no extra config.
 
 1. **Pick a provider** and event type (loaded from the API — not hardcoded in the UI).
 2. **Generate a payload** — realistic JSON (Stripe/GitHub) or form-style params (Twilio). Edit freely in the textarea.
-3. **Sign & Send** — the backend signs with the real provider scheme and POSTs to your `target_url`.
-4. **See the result** — status code, response body, headers sent, and a plain-English diagnosis on failure.
+3. **Use inbox** (optional but recommended) — arms the built-in verifier with your secret and sets the target URL.
+4. **Sign & Send** — the backend signs with the real provider scheme and POSTs to your `target_url`.
+5. **See the result** — send status, inbox PASS/FAIL with detail, and a plain-English diagnosis on outbound failure.
 
 ---
 
@@ -85,15 +86,7 @@ npm run dev
 
 Open **http://localhost:3000**.
 
-Optional echo receiver for signature checks:
-
-```bash
-cd backend
-python -u tests/echo_receiver.py
-# listens on http://127.0.0.1:9999
-```
-
-Use target URLs like `http://127.0.0.1:9999/hooks/stripe` and the smoke secrets documented in `backend/tests/echo_receiver.py`.
+The API’s built-in inbox lives at `http://127.0.0.1:8000/hooks/{provider}` after you click **Use inbox** (no separate echo process required).
 
 ---
 
@@ -102,6 +95,8 @@ Use target URLs like `http://127.0.0.1:9999/hooks/stripe` and the smoke secrets 
 ```bash
 cd backend
 python tests/verify_signatures.py
+# with API running:
+#   python tests/smoke_inbox.py
 ```
 
 Confirms Stripe, Twilio, and GitHub signing match independent verifiers (including Twilio’s official algorithm).
