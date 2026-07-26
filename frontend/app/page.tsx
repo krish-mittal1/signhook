@@ -18,11 +18,17 @@ function pretty(payload: unknown) {
   return JSON.stringify(payload, null, 2);
 }
 
+const DEFAULT_TARGET_BASE =
+  process.env.NEXT_PUBLIC_DEFAULT_TARGET_BASE?.replace(/\/$/, "") ||
+  "http://127.0.0.1:9999";
+
 export default function HomePage() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [provider, setProvider] = useState<ProviderId | "">("");
   const [eventType, setEventType] = useState("");
-  const [targetUrl, setTargetUrl] = useState("http://127.0.0.1:9999/hooks/stripe");
+  const [targetUrl, setTargetUrl] = useState(
+    `${DEFAULT_TARGET_BASE}/hooks/stripe`,
+  );
   const [secret, setSecret] = useState("");
   const [payloadText, setPayloadText] = useState("");
   const [result, setResult] = useState<SendResult | null>(null);
@@ -93,7 +99,7 @@ export default function HomePage() {
     setEventType(next?.event_types[0] ?? "");
     setResult(null);
     // Sensible default path for local echo receiver
-    setTargetUrl(`http://127.0.0.1:9999/hooks/${id}`);
+    setTargetUrl(`${DEFAULT_TARGET_BASE}/hooks/${id}`);
   }
 
   function onEventTypeChange(et: string) {
